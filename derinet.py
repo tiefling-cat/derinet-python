@@ -5,7 +5,13 @@ import sys
 from time import time
 from collections import namedtuple
 
-Node = namedtuple('Node', ['lex_id', 'lemma', 'morph', 'pos', 'parent_id', 'children'])
+Node = namedtuple('Node', 
+                  ['lex_id',
+                   'lemma',
+                   'morph',
+                   'pos',
+                   'parent_id',
+                   'children'])
 
 
 class DeriNet(object):
@@ -21,8 +27,13 @@ class DeriNet(object):
         data, index = [], {}
         with open(fname, 'r', encoding='utf-8') as ifile:
             for i, line in enumerate(ifile):
-                lex_id, lemma, morph, pos, parent_id = line.strip('\n').split('\t')
-                data.append(Node(int(lex_id), lemma, morph, pos, '' if parent_id == '' else int(parent_id), []))
+                line = line.strip('\n')
+                lex_id, lemma, morph, pos, parent_id = line.split('\t')
+                data.append(Node(int(lex_id), lemma, morph, pos, 
+                                 parent_id=''
+                                     if parent_id == ''
+                                     else int(parent_id),
+                                 children=[]))
                 index.setdefault(lemma, {})
                 index[lemma][morph] = int(lex_id)
         return data, index
@@ -44,8 +55,9 @@ class DeriNet(object):
         self._data, self._index = self._read_nodes_from_file(fname)
 
         if len(self._data) - 1 != self._data[-1].lex_id:
-            print('Warning: lexeme numeration in DeriNet file inconsistent:', file=sys.stderr)
-            print('Discovered {} lexemes total but the last was indexed {}'.format(len(self._data), i), file=sys.stderr)
+            print('Warning: lexeme numeration in DeriNet file inconsistent:\n'
+                  'Discovered {} lexemes total but the last was indexed {}'
+                  ''.format(len(self._data), i), file=sys.stderr)
 
         self._populate_children()
 
@@ -61,11 +73,15 @@ class DeriNet(object):
         self._data.sort(key=lambda x: (x.lemma.lower(), x.morph))
 
         # reindex
-        reverse_id_index = [0] * len(self._data) # used for parent_ids only
+        reverse_id = [0] * len(self._data) # used for parent_ids only
         for i, node in enumerate(self._data):
-            reverse_id_index[node[0]] = i
+            reverse_id[node[0]] = i
         for i, node in enumerate(self._data):
-            self._data[i] = node._replace(lex_id=i, parent_id='' if node.parent_id == '' else reverse_id_index[node.parent_id], children=[])
+            self._data[i] = node._replace(lex_id=i,
+                                          parent_id=''
+                                              if node.parent_id == ''
+                                              else reverse_id[node.parent_id],
+                                          children=[])
 
         self._populate_children()
 
@@ -95,7 +111,8 @@ class DeriNet(object):
                     try:
                         self._data[new_node.parent_id] = self._data[-1]
                     except IndexError:
-                        raise Exception("invalid parent id for new node {}: parent doesn't exist".format(new_node))
+                        raise Exception("invalid parent id for new node {}: "
+                                        "parent doesn't exist".format(new_node))
                 self._index.setdefault(new_node.lemma, {})
                 self._index[new_node.lemma][new_node.morph] = len(self._data) - 1
             else:
@@ -131,7 +148,8 @@ class DeriNet(object):
 
     def get_subtree_by_id(self, lex_id):
         lexeme = self._data[lex_id]
-        return [lexeme, [self.get_subtree_by_id(child.id) for child in lexeme.children]]
+        return [lexeme, [self.get_subtree_by_id(child.id)
+                            for child in lexeme.children]]
 
     def print_subtree_by_id(self, lex_id, form1='', form2='  ', form3=''):
         lexeme = self._data[lex_id]
@@ -139,8 +157,12 @@ class DeriNet(object):
         print(*lexeme[:-1], sep='\t')
         if lexeme.children != []:
             for child in lexeme.children[:-1]:
-                self.print_subtree_by_id(child.id, form1=form1+form2, form2='│ ', form3='└─')
-            self.print_subtree_by_id(lexeme.children[-1].id, form1+form2, form2='  ', form3='└─')
+                self.print_subtree_by_id(child.id,
+                                         form1=form1+form2,
+                                         form2='│ ', form3='└─')
+            self.print_subtree_by_id(lexeme.children[-1].id,
+                                     form1=form1+form2,
+                                     form2='  ', form3='└─')
 
 if __name__ == "__main__":
     derinet = DeriNet()
