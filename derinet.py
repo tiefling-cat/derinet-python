@@ -20,14 +20,7 @@ class DeriNet(object):
     def load(self, fname):
         """Load DeriNet tsv file."""
         if not os.path.exists(fname):
-            print('DeriNet file "{}" not found'.format(fname), file=sys.stderr)
-            candidates = [path for path in os.listdir()
-                            if 'derinet' in path and path.enswith('.tsv')]
-            if candidates != []:
-                print('Did you mean:', file=sys.stderr)
-                for path in candidates:
-                    print(path, file=sys.stderr)
-            return None
+            raise Exception('file "{}" not found'.format(fname))
 
         print('Loading DeriNet from "{}" file...'.format(fname), file=sys.stderr)
         btime = time()
