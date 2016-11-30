@@ -17,6 +17,22 @@ class DeriNet(object):
         self.index = {}
         self.fname = None
 
+    def _read_nodes_from_file(self, fname):
+        data, index = [], {}
+        with open(fname, 'r', encoding='utf-8') as ifile:
+            for i, line in enumerate(ifile):
+                lex_id, lemma, morph, pos, parent_id = line.strip('\n').split('\t')
+                data.append(Lexeme(int(lex_id), lemma, morph, pos, '' if parent_id == '' else int(parent_id), []))
+                index.setdefault(lemma, {})
+                index[lemma][morph] = int(lex_id)
+        return data, index
+
+    def _populate_children(self):
+        """Populate children for all nodes."""
+        for node in self.data:
+            if node.parent_id != '':
+                self.data[node.parent_id].children.append(node)
+
     def load(self, fname):
         """Load DeriNet tsv file."""
         if not os.path.exists(fname):
@@ -25,20 +41,13 @@ class DeriNet(object):
         print('Loading DeriNet from "{}" file...'.format(fname), file=sys.stderr)
         btime = time()
 
-        with open(fname, 'r', encoding='utf-8') as ifile:
-            for i, line in enumerate(ifile):
-                lex_id, lemma, morph, pos, parent_id = line.strip('\n').split('\t')
-                self.data.append(Lexeme(int(lex_id), lemma, morph, pos, '' if parent_id == '' else int(parent_id), []))
-                self.index.setdefault(lemma, {})
-                self.index[lemma][morph] = int(lex_id)
+        self.data, self.index = self._read_nodes_from_file(fname)
 
-        if len(self.data) != i + 1:
+        if len(self.data) - 1 != self.data[-1].lex_id:
             print('Warning: Lexeme numeration in DeriNet file inconsistent:', file=sys.stderr)
             print('Discovered {} lexemes total but the last was indexed {}'.format(len(self.data), i), file=sys.stderr)
 
-        for node in self.data:
-            if node.parent_id != '':
-                self.data[node.parent_id].children.append(node)
+        self._populate_children()
 
         print('Loaded in {:.2f} s.'.format(time() - btime), file=sys.stderr)
         self.fname = fname
@@ -58,10 +67,7 @@ class DeriNet(object):
         for i, node in enumerate(self.data):
             self.data[i] = node._replace(lex_id=i, parent_id='' if node.parent_id == '' else reverse_id_index[node.parent_id], children=[])
 
-        # populate children
-        for node in self.data:
-            if node.parent_id != '':
-                self.data[node.parent_id].children.append(node)
+        self._populate_children()
 
         print('Sorted in {:.2f} s.'.format(time() - btime), file=sys.stderr)
 
@@ -80,7 +86,21 @@ class DeriNet(object):
         pass
 
     def update(self, new_data):
-        pass
+        for new_node in new_data:
+            lex_id = self.get_id_by_lemma(new_node.lemma, new_node.morph)
+            if lex_id is None:
+                # no such lexeme exists
+                self.data.append(new_node)
+                if new_node.parent_id != '':
+                    try:
+                        self.data[new_node.parent_id] = self.data[-1]
+                    except IndexError:
+                        raise Exception("invalid parent id for new node {}: parent doesn't exist".format(new_node))
+                self.index.setdefault(new_node.lemma, {})
+                self.index[new_node.lemma][new_node.morph] = len(self.data)
+            else:
+                # there is such lexeme already
+                
 
     def get_lexeme_by_id(self, lex_id):
         return self.data[lex_id]
