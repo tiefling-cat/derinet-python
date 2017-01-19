@@ -298,7 +298,7 @@ class DeriNet(object):
                                form3=''):
         """
         Recursively build a string visualizing the tree
-        with the node with lex_id id as its root.
+        with the node with id lex_id as its root.
         """
         try:
             lexeme = self._data[lex_id]
@@ -337,7 +337,7 @@ class DeriNet(object):
                                form3=''):
         """
         Recursively build a string visualizing the tree
-        containing the node with lex_id.
+        containing the node with id lex_id.
         """
         root = self.get_root_by_id(lex_id)
         if root is None:
@@ -412,7 +412,7 @@ class DeriNet(object):
                     self._data[child.parent_id] = self._data[child.parent_id]._replace(children=new_children)
                 self._data[child_id] = child._replace(parent_id=parent_id)
                 self._data[parent_id].children.append(self._data[child_id])
-        
+
     def add_edge_by_lexemes(self, 
                             child_lemma, parent_lemma, 
                             child_pos=None, parent_pos=None,
