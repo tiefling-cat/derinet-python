@@ -26,6 +26,9 @@ class LexemeNotFoundError(Exception):
 class AmbiguousLexemeError(Exception):
     pass
 
+class AmbiguousParentError(Exception):
+    pass
+
 class ParentNotFoundError(Exception):
     pass
 
@@ -35,13 +38,20 @@ class AlreadyHasParentError(Exception):
 class IsNotParentError(Exception):
     pass
 
-class CycleError(Exception):
+class CycleCreationError(Exception):
     pass
 
 def safe_str(line):
     if line is None:
         return ''
     return line
+
+def pretty_lexeme(lemma, pos, morph):
+    items = [lemma]
+    for item in (pos, morph):
+        if item is not None:
+            items.extend([' ', item])
+    return '"{}"'.format(''.join(items))
 
 # a simple structure to represent a node
 Node = namedtuple('Node', 
@@ -61,10 +71,13 @@ class DeriNet(object):
                  '_fname', # name of file from which DeriNet was loaded
                 ]
 
-    def __init__(self):
-        self._data = []
-        self._index = {}
-        self._fname = None
+    def __init__(self, fname=None):
+        if fname is None:
+            self._data = []
+            self._index = {}
+            self._fname = None
+        else:
+            self.load(fname)
 
     def _read_nodes_from_file(self, fname):
         data, index = [], {}
@@ -99,7 +112,7 @@ class DeriNet(object):
         self._data, self._index = self._read_nodes_from_file(fname)
 
         if len(self._data) - 1 != self._data[-1].lex_id:
-            print('Warning: lexeme numeration in DeriNet file inconsistent:\n'
+            print('Warning: lexeme numeration in DeriNet file looks inconsistent:\n'
                   'Discovered {} lexemes total but the last was indexed {}'
                   ''.format(len(self._data), i), file=sys.stderr)
 
@@ -153,7 +166,7 @@ class DeriNet(object):
         try:
             return self._data[lex_id]
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
 
     def get_ids(self, lemma, pos=None, morph=None):
         """
@@ -198,13 +211,13 @@ class DeriNet(object):
         if id_list is None:
             # no such lexeme in the net
             raise LexemeNotFoundError(
-                    'Lexeme not found: {} {} {}'.format(
-                        lemma, safe_str(pos), safe_str(morph)))
+                    'Lexeme not found: {}'.format(
+                    pretty_lexeme(lemma, pos, morph)))
         if len(id_list) > 1:
             # ambiguous lexeme
             raise AmbiguousLexemeError(
-                    'Ambiguous lexeme: {} {} {}'.format(
-                        lemma, safe_str(pos), safe_str(morph)))
+                    'Ambiguous lexeme: {}'.format(
+                    pretty_lexeme(lemma, pos, morph)))
         # lexeme ok
         return id_list[0]
 
@@ -213,7 +226,7 @@ class DeriNet(object):
         try:
             parent_id = self._data[lex_id].parent_id
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         if parent_id == '':
             return None
         return self._data[parent_id]
@@ -231,7 +244,7 @@ class DeriNet(object):
         try:
             parent_id = self._data[lex_id].parent_id
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         if parent_id == '':
             return None
         current = self._data[parent_id]
@@ -252,7 +265,7 @@ class DeriNet(object):
         try:
             return self._data[lex_id].children
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
 
     def get_subtree_by_id(self, lex_id):
         """
@@ -262,7 +275,7 @@ class DeriNet(object):
         try:
             lexeme = self._data[lex_id]
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         return [lexeme, [self.get_subtree_by_id(child.lex_id)
                             for child in lexeme.children]]
 
@@ -277,7 +290,7 @@ class DeriNet(object):
         try:
             lexeme = self._data[lex_id]
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(lex_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         subtree_str = form1 + form3
         subtree_str += '\t'.join(str(item) for item in lexeme[:-1])
         if lexeme.children != []:
@@ -356,14 +369,14 @@ class DeriNet(object):
         try:
             child = self._data[child_id]
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(child_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(child_id))
         try:
             parent = self._data[parent_id]
         except IndexError:
-            raise ParentNotFoundError("invalid parent id {} for node {}: "
+            raise ParentNotFoundError('invalid parent id {} for node {}: '
                                       "parent doesn't exist".format(parent_id, child_id))
         if child.parent_id != '' and not force:
-            raise AlreadyHasParentError('Node {} already has parent '
+            raise AlreadyHasParentError('node {} already has parent '
                                         'assigned to it: {}'.format(child_id, parent_id))
         else:
             # check for possible cycle creation
@@ -371,7 +384,7 @@ class DeriNet(object):
             while current.parent_id != '' and current.parent_id != child_id:
                 current = self._data[current.parent_id]
             if current.parent_id == child_id:
-                raise CycleError('Setting node {} as parent of node {} '
+                raise CycleCreationError('setting node {} as parent of node {} '
                                  'would create a cycle'.format(parent_id, child_id))
             else:
                 if child.parent_id != '' and force:
@@ -395,9 +408,40 @@ class DeriNet(object):
         If force=True, assign parent regardless of the fact
         that the node already has a parent.
         """
-        child_id = self.get_id(child_lemma, pos=child_pos, morph=child_morph)
-        parent_id = self.get_id(parent_lemma, pos=parent_pos, morph=parent_morph)
-        self.add_edge_by_ids(child_id, parent_id, force=force)
+        try:
+            child_id = self.get_id(child_lemma, pos=child_pos, morph=child_morph)
+        except LexemeNotFoundError:
+            raise LexemeNotFoundError('lexeme {} not found'.format(
+                                      pretty_lexeme(child_lemma, child_pos, child_morph)))
+        except AmbiguousLexemeError:
+            raise AmbiguousLexemeError('lexeme {} is ambiguous'.format(
+                                       pretty_lexeme(child_lemma, child_pos, child_morph)))
+        try:
+            parent_id = self.get_id(parent_lemma, pos=parent_pos, morph=parent_morph)
+        except LexemeNotFoundError:
+            raise ParentNotFoundError('invalid parent {} '
+                                      'for node {}: '
+                                      "parent doesn't exist".format(
+                                      pretty_lexeme(child_lemma, child_pos, child_morph),
+                                      pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+        except AmbiguousLexemeError:
+            raise AmbiguousParentError('invalid parent {} '
+                                       'for node {}: '
+                                       "parent is ambiguous".format(
+                                       pretty_lexeme(child_lemma, child_pos, child_morph),
+                                       pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+        try:
+            self.add_edge_by_ids(child_id, parent_id, force=force)
+        except AlreadyHasParentError:
+            raise AlreadyHasParentError('node {} already has a parent '
+                                        'assigned to it: {}'.format(
+                                        pretty_lexeme(child_lemma, child_pos, child_morph),
+                                        pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+        except CycleCreationError:
+            raise CycleCreationError('setting node {} as a parent of node {} '
+                             'would create a cycle'.format(
+                             pretty_lexeme(child_lemma, child_pos, child_morph),
+                             pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
 
     def add_edges_by_lexemes(self, edge_list, force=True):
         """
