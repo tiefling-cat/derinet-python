@@ -73,7 +73,7 @@ Node = namedtuple('Node',
 
 def lexeme_info(lexeme):
     assert type(lexeme) == Node
-    return ' '.join((lexeme.lemma, lexeme.morph, lexeme.pos))
+    return (lexeme.lemma, lexeme.pos, lexeme.morph)
 
 
 class DeriNet(object):
@@ -186,6 +186,10 @@ class DeriNet(object):
             raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
 
     def search_lexemes(self, lemma, pos=None, morph=None):
+        """
+        Search for all lexemes that satisfy given lemma, pos and morph,
+        and return their representations.
+        """
         lexeme_ids = self.get_ids(lemma, pos=pos, morph=morph)
         return [lexeme_info(self._data[lexeme_id])
                     for lexeme_id in lexeme_ids]
@@ -402,7 +406,7 @@ class DeriNet(object):
         except IndexError:
             raise ParentNotFoundError('invalid parent id {} for node {}: '
                                       "parent doesn't exist".format(parent_id, child_id))
-        if child.parent_id != '' and not force:
+        if not force and child.parent_id != '' and child.parent_id is not None:
             raise AlreadyHasParentError('node {} already has a parent '
                                         'assigned to it: {}'.format(child_id, parent_id))
         else:
@@ -464,16 +468,21 @@ class DeriNet(object):
         try:
             self.add_edge_by_ids(child_id, parent_id, force=force)
         except AlreadyHasParentError:
-            if (ignore_if_exists and 
-                partial_lexeme_match(
-                    self.get_lexeme_by_id(parent_id),
-                    parent_lemma, parent_pos, parent_morph)):
-                pass
-            else:
+            actual_parent = self.get_lexeme_by_id(self._data[child_id].parent_id)
+            if not ignore_if_exists:
                 raise AlreadyHasParentError('node {} already has a parent '
                                             'assigned to it: {}'.format(
                                             pretty_lexeme(child_lemma, child_pos, child_morph),
-                                            pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+                                            pretty_lexeme(actual_parent.lemma, actual_parent.pos, actual_parent.morph)))
+            else:
+                if partial_lexeme_match(actual_parent, parent_lemma, parent_pos, parent_morph):
+                    pass
+                else:
+                    raise AlreadyHasParentError('node {} already has a parent '
+                                                'assigned to it: {}'.format(
+                                                pretty_lexeme(child_lemma, child_pos, child_morph),
+                                                pretty_lexeme(actual_parent.lemma, actual_parent.pos, actual_parent.morph)))              
+
         except CycleCreationError:
             raise CycleCreationError('setting node {} as a parent of node {} '
                              'would create a cycle'.format(
