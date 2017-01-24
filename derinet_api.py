@@ -71,6 +71,10 @@ Node = namedtuple('Node',
                    'children', # these are actual children nodes, not ids
                    ])
 
+def lexeme_info(lexeme):
+    assert type(lexeme) == Node
+    return ' '.join((lexeme.lemma, lexeme.morph, lexeme.pos))
+
 
 class DeriNet(object):
 
@@ -181,13 +185,18 @@ class DeriNet(object):
         except IndexError:
             raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
 
+    def search_lexemes(self, lemma, pos=None, morph=None):
+        lexeme_ids = self.get_ids(lemma, pos=pos, morph=morph)
+        return [lexeme_info(self._data[lexeme_id])
+                    for lexeme_id in lexeme_ids]
+
     def get_ids(self, lemma, pos=None, morph=None):
         """
         Get a list of node ids given lemma and optionally 
         pos and morphological string.
         """
         if lemma not in self._index:
-            return None
+            return []
         lemma_index = self._index[lemma]
         if pos is None:
             if morph is None:
@@ -200,17 +209,18 @@ class DeriNet(object):
                                             in lemma_index.values())))
                 if morph in all_pos_index:
                     return [all_pos_index[morph]]
-                return None
+                return []
         else:
             if pos not in lemma_index:
-                return None
+                return []
             lemma_pos_index = lemma_index[pos]
             if morph is None:
                 return list(lemma_pos_index.values())
             else:
                 if morph in lemma_pos_index:
                     return [lemma_pos_index[morph]]
-                return None
+                return []
+        return []
 
     def get_id(self, lemma, pos=None, morph=None):
         """
@@ -221,7 +231,7 @@ class DeriNet(object):
         or lexeme was ambiguous.
         """
         id_list = self.get_ids(lemma, pos, morph)
-        if id_list is None:
+        if id_list == []:
             # no such lexeme in the net
             raise LexemeNotFoundError(
                     'Lexeme not found: {}'.format(
@@ -401,8 +411,8 @@ class DeriNet(object):
             while current.parent_id != '' and current.parent_id != child_id:
                 current = self._data[current.parent_id]
             if current.parent_id == child_id:
-                raise CycleCreationError('setting node {} as parent of node {} '
-                                 'would create a cycle'.format(parent_id, child_id))
+                raise CycleCreationError('setting node {} as a parent of node {} '
+                                         'would create a cycle'.format(parent_id, child_id))
             else:
                 if child.parent_id != '' and force:
                     new_children = [new_child 
@@ -443,14 +453,14 @@ class DeriNet(object):
             raise ParentNotFoundError('invalid parent {} '
                                       'for node {}: '
                                       "parent doesn't exist".format(
-                                      pretty_lexeme(child_lemma, child_pos, child_morph),
-                                      pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+                                      pretty_lexeme(parent_lemma, parent_pos, parent_morph),
+                                      pretty_lexeme(child_lemma, child_pos, child_morph)))
         except AmbiguousLexemeError:
             raise AmbiguousParentError('invalid parent {} '
                                        'for node {}: '
                                        "parent is ambiguous".format(
-                                       pretty_lexeme(child_lemma, child_pos, child_morph),
-                                       pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+                                       pretty_lexeme(parent_lemma, parent_pos, parent_morph),
+                                       pretty_lexeme(child_lemma, child_pos, child_morph)))
         try:
             self.add_edge_by_ids(child_id, parent_id, force=force)
         except AlreadyHasParentError:
@@ -467,10 +477,10 @@ class DeriNet(object):
         except CycleCreationError:
             raise CycleCreationError('setting node {} as a parent of node {} '
                              'would create a cycle'.format(
-                             pretty_lexeme(child_lemma, child_pos, child_morph),
-                             pretty_lexeme(parent_lemma, parent_pos, parent_morph)))
+                             pretty_lexeme(parent_lemma, parent_pos, parent_morph),
+                             pretty_lexeme(child_lemma, child_pos, child_morph)))
 
-    def add_edges_by_lexemes(self, edge_list, force=True):
+    def add_edges_by_lexemes(self, edge_list, force=False):
         """
         Given a list of edges denoted by child and parent lemmas
         and optionally pos and morphological strings,
@@ -494,7 +504,7 @@ class DeriNet(object):
                                      child_morph=child[2], parent_morph=parent[2],
                                      force=force)
 
-    def remove_edge_by_ids(self, child_id, parent_id, force=False):
+    def remove_edge_by_ids(self, child_id, parent_id):
         """
         Remove an edge from the node with lex_id=parent_id
         to the node with lex_id=child_id checking for consistency.
@@ -502,9 +512,9 @@ class DeriNet(object):
         try:
             child = self._data[child_id]
         except IndexError:
-            raise LexemeNotFoundError('Lexeme with id {} not found'.format(child_id))
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(child_id))
         if child.parent_id != parent_id:
-            raise IsNotParentError('Node {} is not a parent '
+            raise IsNotParentError('node {} is not a parent '
                                    'of node {}'.format(parent_id, child_id))
         try:
             parent = self._data[parent_id]
@@ -521,15 +531,20 @@ class DeriNet(object):
     def remove_edge_by_lexemes(self, 
                             child_lemma, parent_lemma, 
                             child_pos=None, parent_pos=None,
-                            child_morph=None, parent_morph=None,
-                            force=False):
+                            child_morph=None, parent_morph=None):
         """
         Given lemmas and optionally pos and morphological strings,
         remove an edge from parent to child.
         """
         child_id = self.get_id(child_lemma, pos=child_pos, morph=child_morph)
         parent_id = self.get_id(parent_lemma, pos=parent_pos, morph=parent_morph)
-        self.remove_edge_by_ids(child_id, parent_id, force=force)
+        try:
+            self.remove_edge_by_ids(child_id, parent_id)
+        except IsNotParentError:
+            raise IsNotParentError('node {} is not a parent '
+                                   'of node {}'.format(
+                                   pretty_lexeme(parent_lemma, parent_pos, parent_morph),
+                                   pretty_lexeme(child_lemma, child_pos, child_morph)))
 
     def remove_edges_by_lexemes(self, edge_list, force=True):
         """
