@@ -419,22 +419,24 @@ class DeriNet(object):
             raise AlreadyHasParentError('node {} already has a parent '
                                         'assigned to it: {}'.format(child_id, parent_id))
         else:
-            # check for possible cycle creation
-            current = parent
-            while current.parent_id != '' and current.parent_id != child_id:
-                current = self._data[current.parent_id]
-            if current.parent_id == child_id:
-                raise CycleCreationError('setting node {} as a parent of node {} '
-                                         'would create a cycle'.format(parent_id, child_id))
-            else:
+            try:
                 if child.parent_id != '' and force:
-                    new_children = [new_child 
-                                        for new_child
-                                            in self._data[child.parent_id].children
-                                                if new_child.lex_id != child_id]
-                    self._data[child.parent_id] = self._data[child.parent_id]._replace(children=new_children)
-                self._data[child_id] = child._replace(parent_id=parent_id)
-                self._data[parent_id].children.append(self._data[child_id])
+                    # remove the child from old parent children
+                    old_parent = self._data[child.parent_id]
+                    old_parent._replace(children=[new_child for new_child in old_parent.children if new_child != child])
+                child = child._replace(parent_id=parent_id)
+                parent.children.append(child)
+
+                # check for possible cycle creation
+                cycle_count, current = 0, parent
+                while current.parent_id != '' and current.lex_id != child_id:
+                    current = self._data[current.parent_id]
+                if current.lex_id == child_id and cycle_count > 0:
+                    raise CycleCreationError('setting node {} as a parent of node {} '
+                                             'would create a cycle'.format(parent_id, child_id))
+            except CycleCreationError:
+                    raise CycleCreationError('setting node {} as a parent of node {} '
+                                             'would create a cycle'.format(parent_id, child_id))
 
     def add_edge_by_lexemes(self, 
                             child_lemma, parent_lemma, 
