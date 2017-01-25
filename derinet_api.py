@@ -185,12 +185,21 @@ class DeriNet(object):
         except IndexError:
             raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
 
-    def search_lexemes(self, lemma, pos=None, morph=None):
+    def show_lexeme_by_id(self, lex_id):
+        """Get represantation of node with lex_id id."""
+        try:
+            return lexeme_info(self._data[lex_id])
+        except IndexError:
+            raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
+
+    def search_lexemes(self, lemma, pos=None, morph=None, allow_fallback=False):
         """
         Search for all lexemes that satisfy given lemma, pos and morph,
         and return their representations.
         """
         lexeme_ids = self.get_ids(lemma, pos=pos, morph=morph)
+        if len(lexeme_ids) == 0 and allow_fallback and morph is not None:
+            lexeme_ids = self.get_ids(lemma, pos=pos, morph=None)
         return [lexeme_info(self._data[lexeme_id])
                     for lexeme_id in lexeme_ids]
 
@@ -238,12 +247,12 @@ class DeriNet(object):
         if id_list == []:
             # no such lexeme in the net
             raise LexemeNotFoundError(
-                    'Lexeme not found: {}'.format(
+                    'lexeme not found: {}'.format(
                     pretty_lexeme(lemma, pos, morph)))
         if len(id_list) > 1:
             # ambiguous lexeme
             raise AmbiguousLexemeError(
-                    'Ambiguous lexeme: {}'.format(
+                    'ambiguous lexeme: {}'.format(
                     pretty_lexeme(lemma, pos, morph)))
         # lexeme ok
         return id_list[0]
@@ -319,7 +328,7 @@ class DeriNet(object):
         except IndexError:
             raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         subtree_str = form1 + form3
-        subtree_str += '\t'.join(str(item) for item in lexeme[:-1])
+        subtree_str += '\t'.join(str(item) for item in lexeme[1:-2])
         if lexeme.children != []:
             # add all but last children's subtrees
             for child in lexeme.children[:-1]:
@@ -578,5 +587,7 @@ class DeriNet(object):
         
 
 if __name__ == "__main__":
-    derinet = DeriNet()
-    derinet.load('derinet-1-2.tsv')
+    if len(sys.argv) == 2:
+        derinet = DeriNet(sys.argv[1])
+    else:
+        derinet = DeriNet('derinet-1-2.tsv')
