@@ -139,12 +139,12 @@ class DeriNet(object):
         print('Sorting DeriNet...', file=sys.stderr)
         btime = time()
         # sort
-        self._data.sort(key=lambda x: locale.strxfrm(x.lemma.lower()))
+        self._data.sort(key=lambda x: locale.strxfrm(x.morph.lower()))
 
         # reindex
         reverse_id = [0] * len(self._data) # used for parent_ids only
         for i, node in enumerate(self._data):
-            reverse_id[node[0]] = i
+            reverse_id[node.lex_id] = i
         for i, node in enumerate(self._data):
             self._data[i] = node._replace(lex_id=i,
                                           parent_id=''
@@ -328,7 +328,7 @@ class DeriNet(object):
         except IndexError:
             raise LexemeNotFoundError('lexeme with id {} not found'.format(lex_id))
         subtree_str = form1 + form3
-        subtree_str += '\t'.join(str(item) for item in lexeme[1:-2])
+        subtree_str += '\t'.join(str(item) for item in lexeme[:-1])
         if lexeme.children != []:
             # add all but last children's subtrees
             for child in lexeme.children[:-1]:
@@ -420,18 +420,28 @@ class DeriNet(object):
                                         'assigned to it: {}'.format(child_id, parent_id))
         else:
             try:
-                if child.parent_id != '' and force:
+                if self._data[child_id].parent_id != '' and force:
                     # remove the child from old parent children
                     old_parent = self._data[child.parent_id]
-                    old_parent._replace(children=[new_child for new_child in old_parent.children if new_child != child])
-                child = child._replace(parent_id=parent_id)
-                parent.children.append(child)
+                    self._data[child.parent_id] = old_parent._replace(children=[new_child for new_child in old_parent.children if new_child != child])
+                if self._data[parent_id].parent_id == child_id and force:
+                    # turned out we have to reverse the edge
+                    self._data[parent_id] = self._data[parent_id]._replace(parent_id=self._data[child_id].parent_id)
+                    child = self._data[child_id]
+                    self._data[child_id] = child._replace(children=[new_child for new_child in child.children if new_child != parent])
+                    if self._data[parent_id].lex_id == self._data[parent_id].parent_id:
+                        self._data[parent_id] = self._data[parent_id]._replace(parent_id='')
+                self._data[child_id] = child._replace(parent_id=parent_id)
+                self._data[parent_id].children.append(self._data[child_id])
 
                 # check for possible cycle creation
-                cycle_count, current = 0, parent
-                while current.parent_id != '' and current.lex_id != child_id:
+                cycle_count, current, visited = 0, self._data[parent_id], {self._data[child_id].lex_id}
+                while current.parent_id != '' and current.lex_id not in visited:
+                    visited.add(current.lex_id)
                     current = self._data[current.parent_id]
-                if current.lex_id == child_id and cycle_count > 0:
+                    cycle_count += 1
+
+                if current.parent_id != '' and cycle_count > 0:
                     raise CycleCreationError('setting node {} as a parent of node {} '
                                              'would create a cycle'.format(parent_id, child_id))
             except CycleCreationError:
